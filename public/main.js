@@ -61,6 +61,31 @@ const provinces = [
   { x: 780, y: 380, owner: "red" },
 ];
 
+// Track selected province
+let selectedProvince = null;
+
+// Check mouse clicks against province circles
+canvas.addEventListener("click", (event) => {
+  // Get canvas position on screen
+  const rect = canvas.getBoundingClientRect();
+
+  // Convert browser click position into canvas position
+  const mouseX = event.clientX - rect.left;
+  const mouseY = event.clientY - rect.top;
+
+  // Find clicked province
+  const clickedProvince = provinces.find((province) => {
+    const dx = mouseX - province.x;
+    const dy = mouseY - province.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    return distance <= 40;
+  });
+
+  // Store selected province
+  selectedProvince = clickedProvince || null;
+});
+
 // Pick color based on owner
 function getProvinceColor(owner) {
   if (owner === "blue") return "#496dff";
