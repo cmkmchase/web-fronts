@@ -114,6 +114,17 @@ function draw() {
     ctx.lineWidth = 3;
     ctx.strokeStyle = "#ffffff";
     ctx.stroke();
+
+    // Draw yellow selection ring
+    if (province === selectedProvince) {
+    ctx.beginPath();
+    ctx.arc(province.x, province.y, 48, 0, Math.PI * 2);
+
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#ffd84d";
+    ctx.stroke();
+    }
+
   });
 
   // Keep drawing forever
