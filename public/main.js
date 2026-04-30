@@ -10,20 +10,130 @@ const ctx = canvas.getContext("2d");
 let width = 0;
 let height = 0;
 
-// Resize canvas to match the browser window
+// Game map data
+let provinces = [];
+
+// Track selected province
+let selectedProvince = null;
+
+// Number of provinces to generate
+const PROVINCE_COUNT = 180;
+
+// Resize canvas to match browser window
 function resizeCanvas() {
   width = window.innerWidth;
   height = window.innerHeight;
 
   canvas.width = width;
   canvas.height = height;
+
+  generateMap();
 }
 
-// Run once at startup
-resizeCanvas();
+// Generate random Voronoi province map
+function generateMap() {
+  provinces = [];
 
-// Run again whenever the window changes size
-window.addEventListener("resize", resizeCanvas);
+  // Leave room for UI on the left
+  const mapPadding = 80;
+  const leftOffset = 260;
+
+  // Generate random province center points
+  const points = [];
+
+  for (let i = 0; i < PROVINCE_COUNT; i++) {
+    points.push([
+      leftOffset + Math.random() * (width - leftOffset - mapPadding),
+      mapPadding + Math.random() * (height - mapPadding * 2),
+    ]);
+  }
+
+  // Create Delaunay triangulation from points
+  const delaunay = d3.Delaunay.from(points);
+
+  // Convert Delaunay triangulation into Voronoi cells
+  const voronoi = delaunay.voronoi([
+    leftOffset,
+    mapPadding,
+    width - mapPadding,
+    height - mapPadding,
+  ]);
+
+  // Convert each Voronoi cell into a province object
+  for (let i = 0; i < points.length; i++) {
+    const polygon = voronoi.cellPolygon(i);
+
+    // Skip broken cells
+    if (!polygon) continue;
+
+    provinces.push({
+      id: i,
+      center: {
+        x: points[i][0],
+        y: points[i][1],
+      },
+      polygon,
+
+      // Temporary ownership for testing
+      owner: getStartingOwner(points[i][0]),
+
+      // Terrain comes later
+      terrain: "plains",
+    });
+  }
+}
+
+// Assign test ownership based on map position
+function getStartingOwner(x) {
+  if (x < width * 0.45) return "blue";
+  if (x > width * 0.65) return "red";
+
+  return "neutral";
+}
+
+// Pick color based on owner
+function getProvinceColor(owner) {
+  if (owner === "blue") return "#496dff";
+  if (owner === "red") return "#d94b4b";
+
+  return "#777";
+}
+
+// Check if a point is inside a polygon
+function pointInPolygon(x, y, polygon) {
+  let inside = false;
+
+  // Ray-casting algorithm
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const xi = polygon[i][0];
+    const yi = polygon[i][1];
+    const xj = polygon[j][0];
+    const yj = polygon[j][1];
+
+    const intersects =
+      yi > y !== yj > y &&
+      x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+
+    if (intersects) inside = !inside;
+  }
+
+  return inside;
+}
+
+// Handle province clicks
+canvas.addEventListener("click", (event) => {
+  // Get canvas position on screen
+  const rect = canvas.getBoundingClientRect();
+
+  // Convert browser click position into canvas position
+  const mouseX = event.clientX - rect.left;
+  const mouseY = event.clientY - rect.top;
+
+  // Find clicked province by checking polygons
+  selectedProvince = provinces.find((province) =>
+    pointInPolygon(mouseX, mouseY, province.polygon)
+  ) || null;
+});
 
 // Connect to websocket server
 const socket = new WebSocket(
@@ -50,86 +160,57 @@ socket.addEventListener("close", () => {
   statusText.textContent = "Disconnected";
 });
 
-// Temporary province centers
-// These are not real Voronoi provinces yet.
-// This is the first visual test.
-const provinces = [
-  { x: 300, y: 220, owner: "blue" },
-  { x: 420, y: 260, owner: "blue" },
-  { x: 540, y: 300, owner: "neutral" },
-  { x: 660, y: 340, owner: "red" },
-  { x: 780, y: 380, owner: "red" },
-];
+// Draw one province polygon
+function drawProvince(province) {
+  ctx.beginPath();
 
-// Track selected province
-let selectedProvince = null;
+  province.polygon.forEach((point, index) => {
+    const x = point[0];
+    const y = point[1];
 
-// Check mouse clicks against province circles
-canvas.addEventListener("click", (event) => {
-  // Get canvas position on screen
-  const rect = canvas.getBoundingClientRect();
-
-  // Convert browser click position into canvas position
-  const mouseX = event.clientX - rect.left;
-  const mouseY = event.clientY - rect.top;
-
-  // Find clicked province
-  const clickedProvince = provinces.find((province) => {
-    const dx = mouseX - province.x;
-    const dy = mouseY - province.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    return distance <= 40;
+    if (index === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
   });
 
-  // Store selected province
-  selectedProvince = clickedProvince || null;
-});
+  ctx.closePath();
 
-// Pick color based on owner
-function getProvinceColor(owner) {
-  if (owner === "blue") return "#496dff";
-  if (owner === "red") return "#d94b4b";
+  ctx.fillStyle = getProvinceColor(province.owner);
+  ctx.fill();
 
-  return "#777";
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "#eeeeee";
+  ctx.stroke();
+
+  // Selected province outline
+  if (province === selectedProvince) {
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "#ffd84d";
+    ctx.stroke();
+  }
 }
 
 // Main draw loop
 function draw() {
-  // Clear the whole screen
+  // Clear screen
   ctx.clearRect(0, 0, width, height);
 
   // Background
   ctx.fillStyle = "#202020";
   ctx.fillRect(0, 0, width, height);
 
-  // Draw temporary province circles
-  provinces.forEach((province) => {
-    ctx.beginPath();
-    ctx.arc(province.x, province.y, 40, 0, Math.PI * 2);
-
-    ctx.fillStyle = getProvinceColor(province.owner);
-    ctx.fill();
-
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "#ffffff";
-    ctx.stroke();
-
-    // Draw yellow selection ring
-    if (province === selectedProvince) {
-    ctx.beginPath();
-    ctx.arc(province.x, province.y, 48, 0, Math.PI * 2);
-
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = "#ffd84d";
-    ctx.stroke();
-    }
-
-  });
+  // Draw all provinces
+  provinces.forEach(drawProvince);
 
   // Keep drawing forever
   requestAnimationFrame(draw);
 }
 
-// Start drawing
+// Run startup setup
+resizeCanvas();
 draw();
+
+// Regenerate map when window changes size
+window.addEventListener("resize", resizeCanvas);
