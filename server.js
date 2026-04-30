@@ -18,12 +18,61 @@ const wss = new WebSocket.Server({ server });
 // Store connected players
 const players = [];
 
+// Server-owned map state
+const MAP_WIDTH = 1400;
+const MAP_HEIGHT = 800;
+const PROVINCE_COUNT = 180;
+
+// Generate random province centers once when the server starts
+const provinces = generateMap();
+
+// Build one shared map on the server
+function generateMap() {
+  const generatedProvinces = [];
+
+  const mapPadding = 80;
+  const leftOffset = 260;
+
+  for (let i = 0; i < PROVINCE_COUNT; i++) {
+    const x =
+      leftOffset + Math.random() * (MAP_WIDTH - leftOffset - mapPadding);
+
+    const y =
+      mapPadding + Math.random() * (MAP_HEIGHT - mapPadding * 2);
+
+    generatedProvinces.push({
+      id: i,
+      center: { x, y },
+      owner: getStartingOwner(x),
+      terrain: "plains",
+    });
+  }
+
+  return generatedProvinces;
+}
+
+// Assign test ownership based on map position
+function getStartingOwner(x) {
+  if (x < MAP_WIDTH * 0.45) return "blue";
+  if (x > MAP_WIDTH * 0.65) return "red";
+
+  return "neutral";
+}
+
 // Handle new websocket connections
 wss.on("connection", (ws) => {
   console.log("Player connected");
 
   // Add player
   players.push(ws);
+
+  // Send the shared map to this client
+  ws.send(JSON.stringify({
+    type: "map_state",
+    mapWidth: MAP_WIDTH,
+    mapHeight: MAP_HEIGHT,
+    provinces,
+  }));
 
   // Send player count to everyone
   broadcast({

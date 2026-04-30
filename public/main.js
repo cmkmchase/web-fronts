@@ -10,14 +10,15 @@ const ctx = canvas.getContext("2d");
 let width = 0;
 let height = 0;
 
+// Server map size
+let mapWidth = 1400;
+let mapHeight = 800;
+
 // Game map data
 let provinces = [];
 
 // Track selected province
 let selectedProvince = null;
-
-// Number of provinces to generate
-const PROVINCE_COUNT = 180;
 
 // Resize canvas to match browser window
 function resizeCanvas() {
@@ -26,68 +27,25 @@ function resizeCanvas() {
 
   canvas.width = width;
   canvas.height = height;
-
 }
 
-// Generate random Voronoi province map
-function generateMap() {
-  provinces = [];
+// Build Voronoi polygons from server-owned province centers
+function buildVoronoiFromServerMap() {
+  const points = provinces.map((province) => [
+    province.center.x,
+    province.center.y,
+  ]);
 
-  // Leave room for UI on the left
-  const mapPadding = 80;
-  const leftOffset = 260;
-
-  // Generate random province center points
-  const points = [];
-
-  for (let i = 0; i < PROVINCE_COUNT; i++) {
-    points.push([
-      leftOffset + Math.random() * (width - leftOffset - mapPadding),
-      mapPadding + Math.random() * (height - mapPadding * 2),
-    ]);
-  }
-
-  // Create Delaunay triangulation from points
+  // Create Delaunay triangulation from server points
   const delaunay = d3.Delaunay.from(points);
 
   // Convert Delaunay triangulation into Voronoi cells
-  const voronoi = delaunay.voronoi([
-    leftOffset,
-    mapPadding,
-    width - mapPadding,
-    height - mapPadding,
-  ]);
+  const voronoi = delaunay.voronoi([0, 0, mapWidth, mapHeight]);
 
-  // Convert each Voronoi cell into a province object
-  for (let i = 0; i < points.length; i++) {
-    const polygon = voronoi.cellPolygon(i);
-
-    // Skip broken cells
-    if (!polygon) continue;
-
-    provinces.push({
-      id: i,
-      center: {
-        x: points[i][0],
-        y: points[i][1],
-      },
-      polygon,
-
-      // Temporary ownership for testing
-      owner: getStartingOwner(points[i][0]),
-
-      // Terrain comes later
-      terrain: "plains",
-    });
-  }
-}
-
-// Assign test ownership based on map position
-function getStartingOwner(x) {
-  if (x < width * 0.45) return "blue";
-  if (x > width * 0.65) return "red";
-
-  return "neutral";
+  // Add polygon data to each province
+  provinces.forEach((province, index) => {
+    province.polygon = voronoi.cellPolygon(index);
+  });
 }
 
 // Pick color based on owner
@@ -119,19 +77,31 @@ function pointInPolygon(x, y, polygon) {
   return inside;
 }
 
+// Convert browser/canvas coordinates into map coordinates
+function screenToMap(screenX, screenY) {
+  return {
+    x: screenX,
+    y: screenY,
+  };
+}
+
 // Handle province clicks
 canvas.addEventListener("click", (event) => {
   // Get canvas position on screen
   const rect = canvas.getBoundingClientRect();
 
   // Convert browser click position into canvas position
-  const mouseX = event.clientX - rect.left;
-  const mouseY = event.clientY - rect.top;
+  const screenX = event.clientX - rect.left;
+  const screenY = event.clientY - rect.top;
+
+  // Convert canvas position into map position
+  const mouse = screenToMap(screenX, screenY);
 
   // Find clicked province by checking polygons
-  selectedProvince = provinces.find((province) =>
-    pointInPolygon(mouseX, mouseY, province.polygon)
-  ) || null;
+  selectedProvince =
+    provinces.find((province) =>
+      province.polygon && pointInPolygon(mouse.x, mouse.y, province.polygon)
+    ) || null;
 });
 
 // Connect to websocket server
@@ -152,6 +122,15 @@ socket.addEventListener("message", (event) => {
   if (data.type === "player_count") {
     playersText.textContent = `Players: ${data.count}`;
   }
+
+  // Receive shared map from server
+  if (data.type === "map_state") {
+    mapWidth = data.mapWidth;
+    mapHeight = data.mapHeight;
+    provinces = data.provinces;
+
+    buildVoronoiFromServerMap();
+  }
 });
 
 // Disconnected
@@ -161,6 +140,8 @@ socket.addEventListener("close", () => {
 
 // Draw one province polygon
 function drawProvince(province) {
+  if (!province.polygon) return;
+
   ctx.beginPath();
 
   province.polygon.forEach((point, index) => {
@@ -209,14 +190,7 @@ function draw() {
 
 // Run startup setup
 resizeCanvas();
-generateMap();
 draw();
 
 // Resize canvas without changing the generated map
-window.addEventListener("resize", () => {
-  width = window.innerWidth;
-  height = window.innerHeight;
-
-  canvas.width = width;
-  canvas.height = height;
-});
+window.addEventListener("resize", resizeCanvas);
