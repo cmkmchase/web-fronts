@@ -27,7 +27,6 @@ function resizeCanvas() {
   canvas.width = width;
   canvas.height = height;
 
-  generateMap();
 }
 
 // Generate random Voronoi province map
@@ -210,7 +209,14 @@ function draw() {
 
 // Run startup setup
 resizeCanvas();
+generateMap();
 draw();
 
-// Regenerate map when window changes size
-window.addEventListener("resize", resizeCanvas);
+// Resize canvas without changing the generated map
+window.addEventListener("resize", () => {
+  width = window.innerWidth;
+  height = window.innerHeight;
+
+  canvas.width = width;
+  canvas.height = height;
+});
